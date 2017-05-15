@@ -1,0 +1,1 @@
+#define PIN_TEMP_SENSOR D8
