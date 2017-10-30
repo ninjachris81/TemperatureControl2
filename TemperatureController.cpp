@@ -2,9 +2,29 @@
 #include <LogHelper.h>
 
 TemperatureController::TemperatureController() : AbstractIntervalTask(TEMP_INTERVAL_MS) {
-  oneWire = new OneWire(PIN_TEMP_SENSOR);
+  oneWire = new OneWire(PIN_DIGITAL_TEMP_SENSORS);
   sensors = new DallasTemperature(oneWire);
-  for (uint8_t i=0;i<SENSOR_COUNT;i++) tempValues[i] = DEVICE_DISCONNECTED_C;
+  for (uint8_t i=0;i<DIGITAL_SENSOR_COUNT;i++) digitalTemps[i].init(SMOOTH_SIZE, DEVICE_DISCONNECTED_C);
+  
+  for (uint8_t i=0;i<ANALOG_SENSOR_COUNT;i++) {
+    int addr;
+    switch(i) {
+      case ATEMP_SENSOR_INDEX_TANK:
+        addr = PIN_TEMP_TANK;
+        break;
+      case ATEMP_SENSOR_INDEX_BOILER:
+        addr = PIN_TEMP_BOILER;
+        break;
+      case ATEMP_SENSOR_INDEX_OUTSIDE:
+        addr = PIN_TEMP_OUTSIDE;
+        break;
+      case ATEMP_SENSOR_INDEX_SOLAR:
+        addr = PIN_TEMP_SOLAR;
+        break;
+    }
+    
+    analogTemps[i].init(addr, SMOOTH_SIZE, DEVICE_DISCONNECTED_C, ANALOG_KNOWN_R);
+  }
 }
 
 TemperatureController::~TemperatureController() {
@@ -18,22 +38,11 @@ void TemperatureController::init() {
 }
 
 void TemperatureController::update() {
-  if (foundSensors!=SENSOR_COUNT) {
-    byte addr[8];
-    
-    if (!oneWire->search(addr)) {
-      LOG_PRINTLN(F("no 1-wire devices"));
-      sensors->begin();
-      return;
-    }
-    
-    LOG_PRINT(F("Devices: "));
-    LOG_PRINTLNF(sensors->getDeviceCount(), DEC);
-    foundSensors = sensors->getDeviceCount();
-  } else {
-    for (uint8_t i=0;i<SENSOR_COUNT;i++) {
-      tempValues[i] = sensors->getTempCByIndex(i);
-      if (tempValues[i]==DEVICE_DISCONNECTED_C) {
+  // update digital
+  if (foundSensors==DIGITAL_SENSOR_COUNT) {
+    for (uint8_t i=0;i<DIGITAL_SENSOR_COUNT;i++) {
+      digitalTemps[i].pushValue(sensors->getTempCByIndex(i));
+      if (digitalTemps[i].getValue()==DEVICE_DISCONNECTED_C) {
         sensors->begin();
         foundSensors = sensors->getDeviceCount();
         LOG_PRINT(F("Devices: "));
@@ -41,18 +50,36 @@ void TemperatureController::update() {
       }
     }
     sensors->requestTemperatures();
+    
+  } else {
+    byte addr[8];
+    
+    if (oneWire->search(addr)) {
+      LOG_PRINT(F("Devices: "));
+      LOG_PRINTLNF(sensors->getDeviceCount(), DEC);
+      foundSensors = sensors->getDeviceCount();
+    } else {
+      LOG_PRINTLN(F("no 1-wire devices"));
+      sensors->begin();
+    }
   }
+
+  // update analog
+  for (uint8_t i=0;i<ANALOG_SENSOR_COUNT;i++) {
+    analogTemps[i].read();
+  }
+  
 }
 
 float TemperatureController::getTempHC() {
-  return tempValues[TEMP_SENSOR_INDEX_HC];
+  return digitalTemps[DTEMP_SENSOR_INDEX_HC].getValue();;
 }
 
 float TemperatureController::getTempW() {
-  return tempValues[TEMP_SENSOR_INDEX_W];
+  return digitalTemps[DTEMP_SENSOR_INDEX_W].getValue();;
 }
 
 float TemperatureController::getTempTank() {
-  return tempValues[TEMP_SENSOR_INDEX_TANK];
+  return digitalTemps[DTEMP_SENSOR_INDEX_TANK].getValue();;
 }
 
